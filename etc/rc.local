@@ -1,0 +1,79 @@
+#!/bin/sh -e
+#
+# rc.local
+#
+# This script is executed at the end of each multiuser runlevel.
+# Make sure that the script will "exit 0" on success or any other
+# value on error.
+#
+# In order to enable or disable this script just change the execution
+# bits.
+#
+# By default this script does nothing.
+
+#Создаем ipset для списка блокировок
+ipset -exist create blacklist hash:ip
+
+#Редирект запросов  DNS на TOR для доменов onion. Средствами bind9 такой редирект настроить не удалось
+iptables -t nat -A PREROUTING -p udp --dport 53 -m string --hex-string "|056f6e696f6e00|" --algo bm -j REDIRECT --to-port 5353
+iptables -t nat -A OUTPUT     -p udp --dport 53 -m string --hex-string "|056f6e696f6e00|" --algo bm -j REDIRECT --to-port 5353
+
+#Редирект на ТОР IP адресов из списка блокировок
+iptables -t nat -A PREROUTING -p tcp -m set --match-set blacklist dst -j REDIRECT --to-port 9040
+iptables -t nat -A OUTPUT     -p tcp -m set --match-set blacklist dst -j REDIRECT --to-port 9040
+
+#Редирект на тор для ресурсов разрезольвенных тором в локалку 10.0.0.0/8
+#обычно это .onion
+iptables -t nat -A PREROUTING -p tcp -d 10.0.0.0/8 -j REDIRECT --to-port 9040
+iptables -t nat -A OUTPUT     -p tcp -d 10.0.0.0/8 -j REDIRECT --to-port 9040
+
+###########################################
+#Все что ниже относится к настройке самого шлюза, а не к обходу
+#блокировок
+###########################################
+#Включаем NAT
+iptables -t nat -A POSTROUTING -o ppp0 -j MASQUERADE
+
+# Рзрешаем пинги
+iptables -A INPUT -p icmp --icmp-type echo-reply -j ACCEPT
+iptables -A INPUT -p icmp --icmp-type destination-unreachable -j ACCEPT
+iptables -A INPUT -p icmp --icmp-type time-exceeded -j ACCEPT
+iptables -A INPUT -p icmp --icmp-type echo-request -j ACCEPT
+
+# Отбрасываем неопознанные пакеты
+iptables -A INPUT -m state --state INVALID -j DROP
+iptables -A FORWARD -m state --state INVALID -j DROP
+
+# Отбрасываем нулевые пакеты
+iptables -A INPUT -p tcp --tcp-flags ALL NONE -j DROP
+
+# Закрываемся от syn-flood атак
+iptables -A INPUT -p tcp ! --syn -m state --state NEW -j DROP
+iptables -A OUTPUT -p tcp ! --syn -m state --state NEW -j DROP
+
+#Разрешаем входящие из локалки и  локальной петли, и все уже установленные соединения
+iptables -A INPUT -i lo -j ACCEPT
+iptables -A INPUT -i enp7s0 -j ACCEPT
+iptables -A INPUT -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT
+
+#Остальные входящие запрещаем
+iptables -P INPUT DROP
+
+#Разрешаем форвардинг изнутри локалки.
+iptables -A FORWARD -i enp7s0 -j ACCEPT
+iptables -A FORWARD -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT
+
+#Остальной форвардинг запрещаем
+iptables -P FORWARD DROP
+
+#Ждем минуту чтобы тор полностью загрузился, подключился,
+#заработал тор DNS
+sleep 60
+
+#Загружаем свежий список рекламных доменов для фильтрации
+/var/local/blacklist/ad-update.sh
+
+#Заполняем список запрещенных сайтов. Длительная операция.
+/var/local/blacklist/blacklist-update.sh
+
+exit 0

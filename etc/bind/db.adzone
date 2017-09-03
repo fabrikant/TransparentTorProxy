@@ -1,0 +1,11 @@
+$TTL    86400   ; one day  
+@       IN      SOA     ads.example.com. hostmaster.example.com. (
+               2014090102
+                    28800
+                     7200
+                   864000
+                    86400 )          
+                NS      my.dns.server.org          
+                A       192.168.1.2
+@       IN      A       192.168.1.2
+*       IN      A       192.168.1.2

@@ -1,0 +1,6 @@
+#!/bin/bash
+
+#Загружаем свежий список рекламных доменов для фильтрации
+/var/local/blacklist/ad-update.sh
+#Заполняем список запрещенных сайтов. Длительная операция.
+/var/local/blacklist/blacklist-update.sh
